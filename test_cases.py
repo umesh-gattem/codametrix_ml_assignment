@@ -76,18 +76,10 @@ def test_q1_longest_description(df):
     Return the longest ticket description
     ex: [Row(ticket_description='...')]
     """
-    max_length = 0
-    long_ticket = None
-
-    for row in df.rdd.toLocalIterator():
-        if len(row["ticket_description"]) > max_length:
-            max_length = len(row["ticket_description"])
-            long_ticket = row['ticket_description']
-
-    spark = SparkSession.builder.getOrCreate()
-
-    res = spark.createDataFrame([{'ticket_description': long_ticket}])
-    assert hash_util(res.collect()) == "a0ef0d383ff7ee8a3af1669f9a8e0f14"
+    longest_description_row = df.withColumn("description_length", F.length(F.col("ticket_description"))) \
+        .orderBy(F.col("description_length").desc())
+    longest_description_row = longest_description_row.select("ticket_description").limit(1)
+    assert hash_util(longest_description_row.collect()) == "a0ef0d383ff7ee8a3af1669f9a8e0f14"
 
 
 def test_q2_repo_with_max_lines(df):
@@ -125,14 +117,10 @@ def test_q3_max_number_of_slack_messages_per_engineer(df):
 
     hint: Results are ordered by engineer
     """
-    # Filter Engineer not null
-    engineer_messages = df.withColumn("engineer", F.lower(F.col("engineer"))).filter(F.col("engineer").isNotNull())
-    # Max slack messages group by engineer
+    engineer_messages = df.withColumn("engineer", F.initcap(F.col("engineer"))).filter(F.col("engineer").isNotNull())
     engineer_messages = engineer_messages.groupBy("engineer").agg(F.max("num_slack_messages").alias('max_messages'))
-    # Convert engineer name to title
-    engineer_messages = engineer_messages.withColumn("engineer", F.initcap(F.col("engineer")))
-    # Order by engineer
     engineer_messages = engineer_messages.orderBy(F.col("engineer"))
+    engineer_messages.collect()
     assert hash_util(engineer_messages.collect()) == "a237ab13f39d30d21b8b937359e9c01f"
 
 
@@ -144,23 +132,10 @@ def test_q4_mean_hours_spent(df):
     ex: [Row(mean_hours=...)]
     """
     df_with_dates = df.withColumn("date_clean", F.to_date(df.date, "yyyy-MM-dd"))
-    filtered_df = df_with_dates.where((F.col("date_clean") > '2023-05-31') & (F.col("date_clean") < "2023-07-01"))
-    a = filtered_df.agg(F.avg("num_hours").alias("mean_hours"))
-    res = a
-    #
-    # result = 397287.8618578641
-    # spark = SparkSession.builder.getOrCreate()
-    # rows = [{"mean_hours": result/(8070)}]
-    # res = spark.createDataFrame(rows)
-    print(res.collect())
-
-    # june_tickets_df = df.filter((F.month(F.col("date")) == 6) & (F.year(F.col("date")) == 2023))
-
-    # Calculate mean hours spent on a ticket in June 2023
-    # mean_hours_june_2023 = june_tickets_df.agg(F.avg("num_hours").alias("mean_hours")).first()
-    # res = mean_hours_june_2023
-    # print(res.collect())
-    assert hash_util(res.collect()) == "7facdf09b955d4732ed4138d3fa48778"
+    q4_filtered_df = df_with_dates.where((F.col("date_clean") > '2023-05-31') & (F.col("date_clean") < "2023-07-01"))
+    q4_filtered_df = q4_filtered_df.agg(F.mean("num_hours").alias("mean_hours"))
+    q4_filtered_df.collect()
+    assert hash_util(q4_filtered_df.collect()) == "7facdf09b955d4732ed4138d3fa48778"
 
 
 def test_q5_total_lines_contributed(df):
@@ -170,19 +145,9 @@ def test_q5_total_lines_contributed(df):
     Return the total_lines_of_code_contributed
     ex: [Row(total=...)]
     """
-    repo_a = 0
-
-    for row in df.rdd.toLocalIterator():
-        if row['completed'] in ["yes", "true"]:
-            for repo in row['lines_per_repo']:
-                if repo["A"]:
-                    repo_a += repo["A"]
-
-    spark = SparkSession.builder.getOrCreate()
-
-    res = spark.createDataFrame([{'total': repo_a}])
-    print(res.collect())
-    assert hash_util(res.collect()) == "6adec64b2a723c9a52024c53068f264d"
+    line_per_repo = df.selectExpr("inline(lines_per_repo)")
+    completed_tickets = line_per_repo.where((F.col("completed") == 'true')).agg(F.sum("A").alias("total"))
+    assert hash_util(completed_tickets.collect()) == "6adec64b2a723c9a52024c53068f264d"
 
 
 def test_q6_total_new_revenue_per_engineer_per_company_initiative(df):
@@ -196,30 +161,13 @@ def test_q6_total_new_revenue_per_engineer_per_company_initiative(df):
 
     hint: Order the results by engineer. Pay attention to the order of the intitiatives and total_revenue in KPI's
     """
-    from collections import OrderedDict
-    engineer_revenue = OrderedDict()
-
-    for row in df.rdd.toLocalIterator():
-        if row['engineer']:
-            engineer = row['engineer'].lower()
-        else:
-            continue
-
-        for initiative in row['KPIs']:
-            if engineer not in engineer_revenue:
-                engineer_revenue[engineer] = {initiative["initiative"]: initiative["new_revenue"]}
-            else:
-                engineer_revenue[engineer][initiative["initiative"]] = engineer_revenue[engineer].get(
-                    initiative["initiative"], 0) + initiative["new_revenue"]
-
-    result_list = []
-    for engineer, kpis in sorted(engineer_revenue.items()):
-        result_list.append({"engineer": engineer.title(),
-                            "KPIs": [{"initiative": initiative, "total_revenue": revenue} for initiative, revenue
-                                     in sorted(kpis.items())]})
-
-    spark = SparkSession.builder.getOrCreate()
-
-    res = spark.createDataFrame(result_list)
-    print(res.collect())
-    assert hash_util(res.collect()) == "c7b9f4457e8682313464d604f6f66581"
+    new_df = df.withColumn("engineer", F.initcap(F.col("engineer"))).filter(F.col("engineer").isNotNull())
+    inline_kpis = new_df.select("engineer", F.inline(df['KPIs'].alias('initiative', 'new_revenue')))
+    initiative_group_by = inline_kpis.groupBy('engineer', 'initiative')
+    revenue_data = initiative_group_by.agg(F.sum('new_revenue').alias('total_revenue'))
+    sorted_revenue_data = revenue_data.sort('initiative', ascending=True)
+    structed_data = sorted_revenue_data.select('engineer', F.struct('initiative', 'total_revenue').alias('KPIs'))
+    grouped_data = structed_data.groupBy('engineer')
+    output_data = grouped_data.agg(F.collect_list('KPIs').alias('KPIs'))
+    filtered_data = output_data.orderBy(F.col("engineer"))
+    assert hash_util(filtered_data.collect()) == "c7b9f4457e8682313464d604f6f66581"
