@@ -97,6 +97,7 @@ def test_q2_repo_with_max_lines(df):
 
     most_lines_repo = max(repo_lines_dict, key=repo_lines_dict.get)
     total_lines = repo_lines_dict[most_lines_repo]
+    spark = SparkSession.builder.getOrCreate()
     result_df = spark.createDataFrame([(most_lines_repo, total_lines)], ["repo", "total_lines"]).select("repo")
     assert hash_util(result_df.collect()) == "7f2650ec9b6159c18eba65f65615740d"
 
