@@ -89,20 +89,16 @@ def test_q2_repo_with_max_lines(df):
     Return the repo with maximum lines of code added
     ex: [Row(repo='...')]
     """
-    all_upper_chars = {char: 0 for char in list(string.ascii_uppercase)}
+    repos_df = df.selectExpr("inline(lines_per_repo)")
 
-    for row in df.rdd.toLocalIterator():
-        for repo in row['lines_per_repo']:
-            for char in all_upper_chars:
-                if repo[char]:
-                    all_upper_chars[char] += repo[char]
+    sum_expr = [F.expr(f"sum({col}) as {col}") for col in repos_df.columns]
+    repo_lines_df = repos_df.agg(*sum_expr)
+    repo_lines_dict = repo_lines_df.collect()[0].asDict()
 
-    max_repo = max(all_upper_chars, key=all_upper_chars.get)
-
-    spark = SparkSession.builder.getOrCreate()
-
-    res = spark.createDataFrame([{'repo': max_repo}])
-    assert hash_util(res.collect()) == "7f2650ec9b6159c18eba65f65615740d"
+    most_lines_repo = max(repo_lines_dict, key=repo_lines_dict.get)
+    total_lines = repo_lines_dict[most_lines_repo]
+    result_df = spark.createDataFrame([(most_lines_repo, total_lines)], ["repo", "total_lines"]).select("repo")
+    assert hash_util(result_df.collect()) == "7f2650ec9b6159c18eba65f65615740d"
 
 
 def test_q3_max_number_of_slack_messages_per_engineer(df):
