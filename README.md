@@ -22,8 +22,8 @@ source deploy.sh
 Pull docker and run:
 
 ```shell
-docker pull umesh/cdm_assignment:latest
-docker run -it umesh/cdm_assignment:latest 
+docker pull umesh0910/cdm_assignment:latest
+docker run -it umesh0910/cdm_assignment:latest 
 ```
 
 

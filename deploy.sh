@@ -2,7 +2,7 @@
 
 # Set variables
 IMAGE_NAME="cdm_assignment"
-DOCKER_USERNAME="umesh"
+DOCKER_USERNAME="umesh0910"
 TAG="latest"
 DOCKERFILE_PATH="."
 
